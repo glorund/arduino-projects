@@ -1,0 +1,32 @@
+void reconnectWiFi()
+{
+  int statusWiFi = WiFi.status();
+
+  // attempt to connect to Wifi network:
+  while ( statusWiFi != WL_CONNECTED) {
+    Serial.print("Attempting to connect to SSID: ");
+    Serial.println(ssid);
+    Serial.print("Status: ");
+    Serial.println(statusWiFi);
+
+    // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
+    statusWiFi = WiFi.begin(ssid, pass);
+    reconnectCounter ++;
+    if( statusWiFi != WL_CONNECTED )
+    {
+      Serial.print("Connect Fail - call end() wait 5s status:");
+      Serial.println(statusWiFi);      
+
+      Serial.print("Reason code: ");
+      Serial.println(WiFi.reasonCode());
+
+      // Connect was not successful... retry
+      WiFi.end();
+      delay( 5000 );
+    } else {
+      // Give it 1s connected...
+      delay( 1000 );
+    }
+    
+  }
+}
