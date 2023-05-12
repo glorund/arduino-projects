@@ -1,0 +1,236 @@
+/*
+  WiFi MQTT Sender example
+
+  The wifiTask will continously attempt to connect when the connection to the MQTT broker is lost.
+
+  The circuit:
+  - Arduino Nano 33 IoT,
+
+  This example code is in the public domain.
+*/
+
+#include <SPI.h>
+#include <WiFiNINA.h>
+#include "arduino_secrets.h"
+#include <ArduinoMqttClient.h>
+
+///////please enter your sensitive data in the Secret tab/arduino_secrets.h
+char ssid[] = SECRET_SSID;
+char pass[] = SECRET_PASS;
+
+//----------------------------------------------------------------------------------------------------------------------
+// MQTT
+//----------------------------------------------------------------------------------------------------------------------
+
+WiFiClient wifiClient;
+MqttClient mqttClient( wifiClient );
+
+///////please enter your sensitive data in the Secret tab/arduino_secrets.h
+const char broker[] = MQTT_BROKER_IP;     // e.g. "192.168.XXX.XXX"
+int        port     = MQTT_BROKER_PORT;   // e.g. 1883
+
+const char topicDeviceName[] = "nano33iot/name";
+const char topicMqttReconnectCount[] = "nano33iot/mqtt_rcc";
+
+bool newDataRecorded = false;
+
+int WIFI_LED_PIN =  LED_BUILTIN;
+
+void setup()
+{
+  Serial.begin( 9600 );
+  // while ( !Serial );
+
+  pinMode( WIFI_LED_PIN, OUTPUT );
+
+  Serial.println( "WiFi MQTT Example" );
+}
+
+
+void loop()
+{
+#define INTERVAL 60 * 1000
+  static unsigned long previousMillis = 0;
+
+  wifiTask();
+
+  // Run your code here
+  // Do not use delay
+  unsigned long currentMillis = millis();
+  if ( currentMillis - previousMillis > INTERVAL )
+  {
+    previousMillis = currentMillis;
+
+    newDataRecorded = true;
+  }
+
+  loopAnalysis();
+}
+
+void wifiTask( void )
+{
+  static int state = 0;
+  static int wifiConnectTry = 0;
+  static int mqttConnectTry = 0;
+  static int mqttReconnectCount = 0;
+  static int wifiStatus = WL_IDLE_STATUS;
+  static unsigned long previousMillis = 0;
+  unsigned long currentMillis = 0;
+
+#define WIFI_CONNECT_TIMEOUT 10000
+#define WIFI_MQTT_POLL_INTERVALL 10
+
+  enum WIFI_STATE_TYPE { WIFI_CONNECT,
+                         WIFI_MQTT_CONNECT,
+                         WIFI_MQTT_SUBSCRIBE,
+                         WIFI_MQTT_POLL,
+                         WIFI_MQTT_SEND_NAME,
+                         WIFI_MQTT_SEND_RCC,
+                         WIFI_STATE_RESTART = 255
+                       };
+  switch ( state )
+  {
+    case WIFI_CONNECT:
+      if ( wifiStatus == WL_CONNECTED )
+      {
+        state++;
+        digitalWrite( WIFI_LED_PIN, HIGH );
+        break;
+      }
+      if ( millis() - previousMillis < WIFI_CONNECT_TIMEOUT && wifiConnectTry > 0 )
+      {
+        // just continue with rest of program for now
+        break;
+      }
+      if ( wifiConnectTry > 10 )
+      {
+        // could not connect, clear everything and try again later
+        state = WIFI_STATE_RESTART;
+        break;
+      }
+      wifiStatus = WiFi.begin( ssid, pass );
+      previousMillis = millis();
+      wifiConnectTry++;
+      Serial.print( "Try: " );
+      Serial.print( wifiConnectTry );
+      Serial.print( " Status: " );
+      Serial.println( wifiStatus );
+      break;
+    case WIFI_MQTT_CONNECT:
+      if ( mqttClient.connect( broker, port ) )
+      {
+        state++;
+        Serial.println( "MQTT broker connected" );
+      }
+      else
+      {
+        mqttConnectTry++;
+        if ( mqttConnectTry > 10 )
+        {
+          state = WIFI_STATE_RESTART;
+        }
+      }
+      break;
+    case WIFI_MQTT_SUBSCRIBE:
+      // set the message receive callback
+      // mqttClient.onMessage( onMqttMessage );
+
+      // mqttClient.subscribe( topicDateTime );
+
+      state++;
+      break;
+    case WIFI_MQTT_POLL:
+      currentMillis = millis();
+      if ( currentMillis - previousMillis > WIFI_MQTT_POLL_INTERVALL )
+      {
+        previousMillis = currentMillis;
+        // call poll() regularly to allow the library to send MQTT keep alives which
+        // avoids being disconnected by the broker
+        mqttClient.poll();
+
+        if ( !mqttClient.connected() )
+        {
+          state = WIFI_STATE_RESTART;
+          mqttReconnectCount++;
+          break;
+        }
+      }
+
+      if ( newDataRecorded )
+      {
+        newDataRecorded = false;
+        state++;
+      }
+      break;
+    case WIFI_MQTT_SEND_NAME:
+      mqttClient.beginMessage( topicDeviceName );
+      mqttClient.print( "Nano 33 IoT" );
+      mqttClient.endMessage();
+
+      state++;
+      break;
+    case WIFI_MQTT_SEND_RCC:
+      mqttClient.beginMessage( topicMqttReconnectCount );
+      mqttClient.print( mqttReconnectCount );
+      mqttClient.endMessage();
+
+      state = WIFI_MQTT_POLL;
+      break;
+    default:
+      state = 0;
+      wifiConnectTry = 0;
+      mqttConnectTry = 0;
+      wifiStatus = WL_IDLE_STATUS;
+      WiFi.disconnect();
+      WiFi.end();
+      digitalWrite( WIFI_LED_PIN, LOW );
+      Serial.println( "WiFi restart" );
+      break;
+  }
+} // wifiTask
+
+
+// void onMqttMessage( int messageSize )
+// {
+
+// }
+
+
+
+void loopAnalysis()
+{
+  static unsigned long previousMillis = 0;
+  static unsigned long lastMillis = 0;
+  static unsigned long minLoopTime = 0xFFFFFFFF;
+  static unsigned long maxLoopTime = 0;
+  static unsigned long loopCounter = 0;
+
+#define INTERVAL 1000
+
+  unsigned long currentMillis = millis();
+  if ( currentMillis - previousMillis > INTERVAL )
+  {
+    Serial.print( "Loops: " );
+    Serial.print( loopCounter );
+    Serial.print( " ( " );
+    Serial.print( minLoopTime );
+    Serial.print( " / " );
+    Serial.print( maxLoopTime );
+    Serial.println( " )" );
+    previousMillis = currentMillis;
+    loopCounter = 0;
+    minLoopTime = 0xFFFFFFFF;
+    maxLoopTime = 0;
+  }
+  loopCounter++;
+  unsigned long loopTime = currentMillis - lastMillis;
+  lastMillis = currentMillis;
+  if ( loopTime < minLoopTime )
+  {
+    minLoopTime = loopTime;
+  }
+  if ( loopTime > maxLoopTime )
+  {
+    maxLoopTime = loopTime;
+  }
+}
