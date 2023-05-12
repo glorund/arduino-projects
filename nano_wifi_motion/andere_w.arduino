@@ -1,0 +1,60 @@
+void loop()
+{
+  connectToWLAN();
+  connectToMQTT();
+
+  readSensors();
+  feed.publish(data);
+}
+
+
+void connectToWLAN()
+{
+  if (WiFi.status() == WL_NO_MODULE)
+  {
+    WiFi.setLEDs(0, 255, 255); // Magenta = WLAN module malfunction
+    while (true);
+  }
+
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    return;
+  }
+
+  WiFi.setLEDs(96, 255, 0); // Orange = no WLAN router connection yet
+
+  do
+  {
+    status = WiFi.begin(WLAN_SSID, WLAN_PASS);
+    delay(100);
+  }
+  while (status != WL_CONNECTED);
+
+  WiFi.setLEDs(224, 255, 0); // Yellow = WLAN router connection established
+  delay(3000); // To better see the status indicating RGB LED's state
+}
+
+
+void connectToMQTT()
+{
+  if (mqtt.connected())
+  {
+    return;
+  }
+
+  int8_t MQTTerrorString;
+
+  while ((MQTTerrorString = mqtt.connect()) != 0)
+  {
+    if (MQTTerrorString >= 0)
+    {
+      mqtt.disconnect();
+
+      WiFi.setLEDs(255, 0, 255); // Cyan = MQTT connection failed
+      delay(3000); // Wait before returning to loop() and trying again
+    }
+  }
+
+  WiFi.setLEDs(255, 0, 0); // Green = MQTT broker connection established
+  delay(3000); // To better see the status indicating RGB LED's state
+}
